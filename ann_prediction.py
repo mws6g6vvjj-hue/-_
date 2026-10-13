@@ -23,10 +23,32 @@ def load_data():
             continue
 
         try:
-            data = pd.read_csv(path)
+            data = None
+            last_error = None
+            # 서울시 공공데이터 CSV에서 자주 쓰이는 인코딩을 순서대로 시도합니다.
+            for encoding in ("utf-8-sig", "cp949", "euc-kr", "utf-8"):
+                try:
+                    data = pd.read_csv(path, encoding=encoding)
+                    break
+                except Exception as error:
+                    last_error = error
+            if data is None:
+                raise last_error
             if data.empty:
                 print("파일에 데이터가 없습니다.")
                 continue
+            data.columns = [str(column).strip() for column in data.columns]
+            data = data.replace([-999, -9999, -99, "-999", "-9999", "-99"], np.nan)
+            # 숫자로 저장된 값이 문자열로 읽힌 경우 숫자형으로 변환합니다.
+            for column in data.columns:
+                if data[column].dtype == "object":
+                    converted = pd.to_numeric(
+                        data[column].astype(str).str.replace(",", "", regex=False),
+                        errors="coerce"
+                    )
+                    non_missing = data[column].notna().sum()
+                    if converted.notna().sum() > 0 and converted.notna().sum() >= max(3, int(0.5 * non_missing)):
+                        data[column] = converted
             return data
         except Exception as error:
             print(f"파일을 읽는 중 오류가 발생했습니다: {error}")
